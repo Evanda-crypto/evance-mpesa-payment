@@ -81,7 +81,7 @@ Successfull registration results to
 
 ```bash
 
- $response=EvanceMpesa::express()
+ $response=EvanceMpesa::express(1030,'714611350',$acc_ref,'Remarks')
 
 ```
 

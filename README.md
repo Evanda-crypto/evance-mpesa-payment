@@ -16,14 +16,15 @@ composer require evance-odhiambo/mpesa-payment
 
 ## Usage
 
-after Installation add 
+after Installation add In array of providers in config/app.php Put
 
 ```bash
 
-EvanceOdhiambo\MpesaPayment\MpesaPaymentServiceProvider::class to array of providers in config/app.php
+EvanceOdhiambo\MpesaPayment\MpesaPaymentServiceProvider::class
 
 ```
-and  
+and  In aliases Put
+
 ```bash
 EvanceMpesa' => EvanceOdhiambo\MpesaPayment\MpesaPaymentFacade::class to aliases
 ```

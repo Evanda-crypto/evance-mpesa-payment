@@ -18,9 +18,15 @@ composer require evance-odhiambo/mpesa-payment
 
 after Installation add 
 
+```bash
+
 EvanceOdhiambo\MpesaPayment\MpesaPaymentServiceProvider::class to array of providers in config/app.php
 
-and  'EvanceMpesa' => EvanceOdhiambo\MpesaPayment\MpesaPaymentFacade::class to aliases
+```
+and  
+```bash
+EvanceMpesa' => EvanceOdhiambo\MpesaPayment\MpesaPaymentFacade::class to aliases
+```
 
 Then run 
 
@@ -32,6 +38,7 @@ Inside config there is a file called evance-mpesa.php created just confirm
 
 Now copy 
 
+```bash
 MPESA_ENV=sandbox
 CONSUMER_KEY=
 CONSUMER_SECRET=
@@ -42,6 +49,8 @@ C2B_VALIDATE_CALLBACK=
 C2B_CONFIRM_CALLBACK=
 CALLBACK_URL=
 ACC_REF=
+
+```
 
 to your .env and fill with your details.Enjoy.
 

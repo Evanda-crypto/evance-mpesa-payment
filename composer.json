@@ -15,6 +15,7 @@
             "role": "Developer"
         }
     ],
+    "minimum-stability": "dev",
     "require": {
         "php": "^8.1",
         "illuminate/support": "^10.0"
@@ -47,7 +48,7 @@
                 "EvanceOdhiambo\\MpesaPayment\\MpesaPaymentServiceProvider"
             ],
             "aliases": {
-                "MpesaPayment": "EvanceOdhiambo\\MpesaPayment\\MpesaPaymentFacade"
+                "MpesaEvance": "EvanceOdhiambo\\MpesaPayment\\MpesaPaymentFacade"
             }
         }
     }

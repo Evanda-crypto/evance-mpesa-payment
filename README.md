@@ -53,7 +53,59 @@ ACC_REF=
 
 ```
 
-to your .env and fill with your details.Enjoy.
+to your .env and fill with your details.
+
+1. To Register C2B urls just call the bellow fn fromyour 
+
+```bash
+
+ $response=EvanceMpesa::registerUrls()
+
+```
+
+Successfull registration results to
+
+
+```bash
+{
+  "OriginatorCoversationID": "23311-116912840-1",
+  "ResponseCode": "0",
+  "ResponseDescription": "Success"
+}
+```
+
+
+
+
+2 To initial Mpesa Express (C2B Payments) call
+
+```bash
+
+ $response=EvanceMpesa::express()
+
+```
+
+Upon successfull stk push
+
+
+```bash
+{
+  "MerchantRequestID": "101796-19195815-1",
+  "CheckoutRequestID": "ws_CO_29062023231703226715711360",
+  "ResponseCode": "0",
+  "ResponseDescription": "Success. Request accepted for processing",
+  "CustomerMessage": "Success. Request accepted for processing"
+}
+
+```
+
+### NOTE
+
+```bash
+This Package is still under Development
+```
+
+
 
 
 ### Testing
@@ -76,13 +128,10 @@ If you discover any security related issues, please email evanceodhiambo07@gmail
 
 ## Credits
 
--   [Evance Odhiambo](https://github.com/evance-odhiambo)
+-   [Evance Odhiambo](https://github.com/Evanda-crypto)
 -   [All Contributors](../../contributors)
 
 ## License
 
 The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
 
-## Laravel Package Boilerplate
-
-This package was generated using the [Laravel Package Boilerplate](https://laravelpackageboilerplate.com).

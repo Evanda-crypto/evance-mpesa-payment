@@ -3,6 +3,7 @@
 namespace EvanceOdhiambo\MpesaPayment;
 
 use Illuminate\Support\Facades\Cache;
+use EvanceOdhiambo\MpesaPayment\Controllers\MpesaResponseController;
 
 class MpesaPayment
 {
@@ -27,8 +28,13 @@ class MpesaPayment
 
     public $callbackurl;
 
+    protected $callback_results;
+
+    public $app_base_url;
+
     public function __construct()
     {
+        $this->app_base_url = url('/').'/evance';
 
         $this->base_url = (config('evance-mpesa.mpesa_env') == 'sandbox') ? 'https://sandbox.safaricom.co.ke/mpesa/' : 'https://api.safaricom.co.ke/mpesa/';
 
@@ -41,13 +47,18 @@ class MpesaPayment
         $this->shortcode = config('evance-mpesa.shortcode');
         $this->passkey = config('evance-mpesa.passkey');
 
-        $this->callbackurl = config('evance-mpesa.callbackurl');
+        $this->callbackurl = (!empty(config('evance-mpesa.callbackurl'))) ? config('evance-mpesa.callbackurl') : $this->app_base_url.'/callback' ;
 
         // c2b the urls
-        $this->c2bvalidate = config('evance-mpesa.c2b_validate_callback');
-        $this->c2bconfirm = config('evance-mpesa.c2b_confirm_callback');
+        $this->c2bvalidate = (!empty(config('evance-mpesa.c2b_validate_callback'))) ? config('evance-mpesa.c2b_validate_callback') : $this->app_base_url.'/validate';
+
+        $this->c2bconfirm = (!empty(config('evance-mpesa.c2b_confirm_callback'))) ? config('evance-mpesa.c2b_confirm_callback') : $this->app_base_url.'/confirm';
 
         $this->access_token = $this->generateSandboxToken(); //Set up access token
+
+        $this->callback_results = new MpesaResponseController();
+
+
     }
 
     public function generateSandboxToken()
@@ -80,7 +91,7 @@ class MpesaPayment
 
         $ch = curl_init('' . $this->base_url . 'c2b/v1/registerurl');
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $this->cachedToken(),
+            'Authorization: Bearer ' . $this->accessToken(),
             'Content-Type: application/json',
         ]);
         curl_setopt($ch, CURLOPT_POST, 1);
@@ -96,7 +107,7 @@ class MpesaPayment
     private function generalCurlRequest($url, $data)
     {
 
-        $access_token = isset($this->access_token) ? $this->access_token : $this->cachedToken();
+        $access_token = isset($this->access_token) ? $this->access_token : $this->accessToken();
 
         if ($access_token != '' || $access_token !== false) {
             $curl = curl_init();
@@ -115,11 +126,6 @@ class MpesaPayment
         return false;
 
     }
-
-    /**
-     * C2B Simulation
-     * Used to simulate a C2B Transaction to test your ConfirmURL and ValidationURL in the Client to Business method
-     */
 
     public function simulatec2b($amount, $msisdn, $ref)
     {
@@ -176,7 +182,7 @@ class MpesaPayment
         return $response;
     }
 
-    public function cachedToken()
+    public function accessToken()
     {
         $token = Cache::get('access_token');
         $tokenTimestamp = Cache::get('token_timestamp');
@@ -211,8 +217,23 @@ class MpesaPayment
         return $newToken;
     }
 
+    public function validationResults()
+    {
+        return $this->callback_results->validateCallBack();
+    }
+
+    public function confirmationResults()
+    {
+        return $this->callback_results->confrimCallBack();
+    }
+
+    public function callBackResults()
+    {
+        return $this->callback_results->CallBack();
+    }
+
     public function test()
     {
-        return 'Package working';
+        return $this->callbackurl;
     }
 }

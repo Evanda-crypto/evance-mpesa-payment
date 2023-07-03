@@ -61,5 +61,6 @@ class MpesaPaymentServiceProvider extends ServiceProvider
             __DIR__.'/../config/evance-mpesa.php' => config_path('evance-mpesa.php'),
         ], 'config');
         
+        $this->loadRoutesFrom(__DIR__.'/routes/api.php');
     }
 }

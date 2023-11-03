@@ -4,6 +4,7 @@ namespace EvanceOdhiambo\MpesaPayment;
 
 use Illuminate\Support\Facades\Cache;
 use EvanceOdhiambo\MpesaPayment\Controllers\MpesaResponseController;
+use Illuminate\Support\Facades\Http;
 
 class MpesaPayment
 {
@@ -34,7 +35,7 @@ class MpesaPayment
 
     public function __construct()
     {
-        $this->app_base_url = url('/').'/evance';
+        $this->app_base_url = url('/') . '/evance';
 
         $this->base_url = (config('evance-mpesa.mpesa_env') == 'sandbox') ? 'https://sandbox.safaricom.co.ke/mpesa/' : 'https://api.safaricom.co.ke/mpesa/';
 
@@ -47,12 +48,12 @@ class MpesaPayment
         $this->shortcode = config('evance-mpesa.shortcode');
         $this->passkey = config('evance-mpesa.passkey');
 
-        $this->callbackurl = (!empty(config('evance-mpesa.callbackurl'))) ? config('evance-mpesa.callbackurl') : $this->app_base_url.'/callback' ;
+        $this->callbackurl = (!empty(config('evance-mpesa.callbackurl'))) ? config('evance-mpesa.callbackurl') : $this->app_base_url . '/callback';
 
         // c2b the urls
-        $this->c2bvalidate = (!empty(config('evance-mpesa.c2b_validate_callback'))) ? config('evance-mpesa.c2b_validate_callback') : $this->app_base_url.'/validate';
+        $this->c2bvalidate = (!empty(config('evance-mpesa.c2b_validate_callback'))) ? config('evance-mpesa.c2b_validate_callback') : $this->app_base_url . '/validate';
 
-        $this->c2bconfirm = (!empty(config('evance-mpesa.c2b_confirm_callback'))) ? config('evance-mpesa.c2b_confirm_callback') : $this->app_base_url.'/confirm';
+        $this->c2bconfirm = (!empty(config('evance-mpesa.c2b_confirm_callback'))) ? config('evance-mpesa.c2b_confirm_callback') : $this->app_base_url . '/confirm';
 
         $this->access_token = $this->generateSandboxToken(); //Set up access token
 
@@ -65,66 +66,33 @@ class MpesaPayment
     {
         $url = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
 
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $url);
-        $credentials = base64_encode('' . $this->consumer_key . ':' . $this->consumer_secret . '');
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array('Authorization: Basic ' . $credentials)); //setting a custom header
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        $credentials = base64_encode($this->consumer_key . ':' . $this->consumer_secret);
 
-        $curl_response = curl_exec($curl);
+        $response = Http::withHeaders([
+            'Authorization' => 'Basic ' . $credentials,
+        ])->withoutVerifying()->get($url);
 
-        $json_response = json_decode($curl_response, false);
+        $json_response = $response->json();
 
-        return $json_response->access_token;
+        return $json_response['access_token'];
     }
+
 
     public function registerUrls()
     {
-        $request_data = array(
+        $request_data = [
             'ShortCode' => $this->paybill,
             'ResponseType' => 'Completed',
             'ConfirmationURL' => $this->c2bconfirm,
             'ValidationURL' => $this->c2bvalidate,
-        );
-        $data = json_encode($request_data);
+        ];
 
-        $ch = curl_init('' . $this->base_url . 'c2b/v1/registerurl');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $this->accessToken(),
-            'Content-Type: application/json',
-        ]);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        $response = curl_exec($ch);
-        curl_close($ch);
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->accessToken(),
+            'Content-Type' => 'application/json',
+        ])->post($this->base_url . 'c2b/v1/registerurl', $request_data);
 
-        return $response;
-
-    }
-
-    private function generalCurlRequest($url, $data)
-    {
-
-        $access_token = isset($this->access_token) ? $this->access_token : $this->accessToken();
-
-        if ($access_token != '' || $access_token !== false) {
-            $curl = curl_init();
-            curl_setopt($curl, CURLOPT_URL, $url);
-            curl_setopt($curl, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $access_token));
-
-            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($curl, CURLOPT_POST, true);
-            curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
-
-            $response = curl_exec($curl);
-            curl_close($curl);
-
-            return $response;
-        }
-        return false;
-
+        return $response->body();
     }
 
     public function simulatec2b($amount, $msisdn, $ref)
@@ -136,50 +104,44 @@ class MpesaPayment
             'Msisdn' => $msisdn,
             'BillRefNumber' => $ref,
         );
-        $data = json_encode($data);
-        $url = $this->base_url . 'c2b/v1/simulate';
-        $response = $this->generalCurlRequest($url, $data);
 
-        return $response;
+        $access_token = isset($this->access_token) ? $this->access_token : $this->accessToken();
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $access_token,
+            'Content-Type' => 'application/json',
+        ])->post($this->base_url . 'c2b/v1/simulate', $data);
+
+        return $response->body();
     }
 
-    public function express($amount, $phone, $ac_ref, $remark = null)
+    public function express($amount, $phone, $ac_ref, $remark = 'Evance Mpesa Package')
     {
-
         $final_phone = '254' . substr($phone, -9);
-        $timestamp = date('YmdHis');
+        $timestamp = now()->format('YmdHis');
 
         $password = base64_encode($this->paybill . $this->passkey . $timestamp);
-        $url = config('evance-mpesa.mpesa_env') ? '' . $this->base_url . 'stkpush/v1/processrequest' : '' . $this->base_url . 'stkpush/v1/processrequest';
+        $url = config('evance-mpesa.mpesa_env') ? $this->base_url . 'stkpush/v1/processrequest' : $this->base_url . 'stkpush/v1/processrequest';
 
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $url);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json; charset=UTF-8', 'Authorization:Bearer ' . $this->access_token));
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json; charset=UTF-8',
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])->post($url, [
+                    'BusinessShortCode' => intval($this->paybill),
+                    'Timestamp' => $timestamp,
+                    'Password' => $password,
+                    'TransactionType' => 'CustomerPayBillOnline',
+                    'Amount' => $amount,
+                    'PartyA' => $final_phone,
+                    'PartyB' => $this->paybill,
+                    'PhoneNumber' => $final_phone,
+                    'CallBackURL' => $this->callbackurl,
+                    'AccountReference' => $ac_ref,
+                    'TransactionDesc' => $remark,
+                    'Remark' => $remark,
+                ]);
 
-        $curl_post_data = array(
-            'BusinessShortCode' => intval($this->paybill),
-            'Timestamp' => $timestamp,
-            'Password' => $password,
-            'TransactionType' => 'CustomerPayBillOnline',
-            'Amount' => $amount,
-            'PartyA' => $final_phone,
-            'PartyB' => $this->paybill,
-            'PhoneNumber' => $final_phone,
-            'CallBackURL' => $this->callbackurl,
-            'AccountReference' => $ac_ref,
-            'TransactionDesc' => $remark,
-            'Remark' => $remark,
-        );
-
-        $data_string = json_encode($curl_post_data);
-
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_POST, true);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, $data_string);
-
-        $response = curl_exec($curl);
-
-        return $response;
+        return $response->body();
     }
 
     public function accessToken()
@@ -230,10 +192,5 @@ class MpesaPayment
     public function callBackResults()
     {
         return $this->callback_results->CallBack();
-    }
-
-    public function test()
-    {
-        return $this->callbackurl;
     }
 }

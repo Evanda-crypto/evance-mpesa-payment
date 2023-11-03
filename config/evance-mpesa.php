@@ -3,8 +3,6 @@
 /*
  * Set Your configurations from .env
  */
-/*
- */
 return [
 
     //Specify the environment mpesa is running, sandbox or production

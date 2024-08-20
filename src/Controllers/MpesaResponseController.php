@@ -3,22 +3,32 @@
 namespace EvanceOdhiambo\MpesaPayment\Controllers;
 
 use App\Http\Controllers\Controller;
-
+use Illuminate\Http\Request;
 class MpesaResponseController extends Controller
 {
-    public function confrimCallBack()
+    public function c2bConfrimCallBack(Request $request)
     {
-        return file_get_contents('php://input');
+        return $request;
     }
 
-    public function validateCallBack()
+    public function c2bValidateCallBack(Request $request)
     {
-        return file_get_contents('php://input');
+        return $request;
     }
 
-    public function CallBack()
+    public function c2bCallBack(Request $request)
     {
-        return file_get_contents('php://input');
+        return $request;
+    }
+
+
+    public function b2cCallback(Request $request)
+    {
+        # code...
+    }
+    public function queueTimeoutCallback(Request $request)
+    {
+        # code...
     }
 
 }

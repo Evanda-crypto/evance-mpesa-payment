@@ -4,11 +4,14 @@ namespace EvanceOdhiambo\MpesaPayment;
 
 use Illuminate\Support\Facades\Cache;
 use EvanceOdhiambo\MpesaPayment\Controllers\MpesaResponseController;
+use Exception;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class MpesaPayment
 {
 
-    private $base_url;
+    public $base_url;
 
     public $consumer_key;
 
@@ -32,11 +35,15 @@ class MpesaPayment
 
     public $app_base_url;
 
+    public $b2c_callbackurl;
+
+    public $queue_timeout_url;
+
     public function __construct()
     {
-        $this->app_base_url = url('/').'/evance';
+        $this->app_base_url = url('/') . '/evance-mpesa';
 
-        $this->base_url = (config('evance-mpesa.mpesa_env') == 'sandbox') ? 'https://sandbox.safaricom.co.ke/mpesa/' : 'https://api.safaricom.co.ke/mpesa/';
+        $this->base_url = (config('evance-mpesa.mpesa_env') == 'sandbox') ? 'https://sandbox.safaricom.co.ke/' : 'https://api.safaricom.co.ke/';
 
         $this->consumer_key = config('evance-mpesa.consumer_key'); // Consumer Key from your daraja app
 
@@ -45,195 +52,425 @@ class MpesaPayment
         $this->paybill = config('evance-mpesa.paybill'); //Paybill number registered or use daraja's test
 
         $this->shortcode = config('evance-mpesa.shortcode');
+
         $this->passkey = config('evance-mpesa.passkey');
 
-        $this->callbackurl = (!empty(config('evance-mpesa.callbackurl'))) ? config('evance-mpesa.callbackurl') : $this->app_base_url.'/callback' ;
+        $this->callbackurl = (!empty(config('evance-mpesa.callbackurl'))) ? config('evance-mpesa.callbackurl') : $this->app_base_url . '/c2b_callback';
 
         // c2b the urls
-        $this->c2bvalidate = (!empty(config('evance-mpesa.c2b_validate_callback'))) ? config('evance-mpesa.c2b_validate_callback') : $this->app_base_url.'/validate';
+        $this->c2bvalidate = (!empty(config('evance-mpesa.c2b_validate_callback'))) ? config('evance-mpesa.c2b_validate_callback') : $this->app_base_url . '/c2b_validate';
 
-        $this->c2bconfirm = (!empty(config('evance-mpesa.c2b_confirm_callback'))) ? config('evance-mpesa.c2b_confirm_callback') : $this->app_base_url.'/confirm';
+        $this->c2bconfirm = (!empty(config('evance-mpesa.c2b_confirm_callback'))) ? config('evance-mpesa.c2b_confirm_callback') : $this->app_base_url . '/c2b_confirm';
 
-        $this->access_token = $this->generateSandboxToken(); //Set up access token
+
+        // b2c the urls
+        $this->b2c_callbackurl = (!empty(config('evance-mpesa.b2c_callbackurl'))) ? config('evance-mpesa.b2c_callbackurl') : $this->app_base_url . '/b2c_callbackurl';
+
+        $this->queue_timeout_url = (!empty(config('evance-mpesa.queue_timeout_url'))) ? config('evance-mpesa.queue_timeout_url') : $this->app_base_url . '/queue_timeout_url';
+
+        $this->access_token = $this->accessTken(); //Set up access token
 
         $this->callback_results = new MpesaResponseController();
-
-
     }
 
-    public function generateSandboxToken()
+    private function accessTken()
     {
-        $url = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
 
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $url);
-        $credentials = base64_encode('' . $this->consumer_key . ':' . $this->consumer_secret . '');
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array('Authorization: Basic ' . $credentials)); //setting a custom header
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        $cacheKey = 'evance_mpesa_access_token';
 
-        $curl_response = curl_exec($curl);
+        $cachedToken = cache()->get($cacheKey);
 
-        $json_response = json_decode($curl_response, false);
+        if ($cachedToken) {
+            return $cachedToken;
+        }
 
-        return $json_response->access_token;
+        $credentials = base64_encode($this->consumer_key . ':' . $this->consumer_secret);
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Basic ' . $credentials,
+        ])->get($this->base_url . '/oauth/v1/generate?grant_type=client_credentials');
+
+        if ($response->successful()) {
+            $results = json_decode($response->body(), false);
+
+            $accessToken = $results->access_token;
+            $expiresIn = (int) $results->expires_in;
+
+            cache()->put($cacheKey, $accessToken, $expiresIn);
+            return $accessToken;
+        }
+
+        throw new Exception('Failed to generate access token.');
     }
 
     public function registerUrls()
     {
-        $request_data = array(
-            'ShortCode' => $this->paybill,
-            'ResponseType' => 'Completed',
-            'ConfirmationURL' => $this->c2bconfirm,
-            'ValidationURL' => $this->c2bvalidate,
-        );
-        $data = json_encode($request_data);
-
-        $ch = curl_init('' . $this->base_url . 'c2b/v1/registerurl');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $this->accessToken(),
+        $response = Http::withHeaders([
+            'Authorization: Bearer ' . $this->access_token,
             'Content-Type: application/json',
-        ]);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        $response = curl_exec($ch);
-        curl_close($ch);
+        ])
+            ->post($this->base_url . 'mpesa/c2b/v1/registerurl', [
+                'ShortCode' => $this->paybill,
+                'ResponseType' => 'Completed',
+                'ConfirmationURL' => $this->c2bconfirm,
+                'ValidationURL' => $this->c2bvalidate,
+            ]);
 
-        return $response;
-
+        return $response->body();
     }
 
-    private function generalCurlRequest($url, $data)
+    public function simulateC2B(int $amount, $msisdn, $reference)
     {
 
-        $access_token = isset($this->access_token) ? $this->access_token : $this->accessToken();
+        $response = Http::withHeaders([
+            'Authorization' => 'Basic ',
+        ])
+            ->post($this->base_url . 'mpesa/c2b/v1/simulate', [
+                'ShortCode' => $this->paybill,
+                'CommandID' => 'CustomerPayBillOnline',
+                'Amount' => $amount,
+                'Msisdn' => $msisdn,
+                'BillRefNumber' => $reference,
+            ]);
 
-        if ($access_token != '' || $access_token !== false) {
-            $curl = curl_init();
-            curl_setopt($curl, CURLOPT_URL, $url);
-            curl_setopt($curl, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $access_token));
-
-            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($curl, CURLOPT_POST, true);
-            curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
-
-            $response = curl_exec($curl);
-            curl_close($curl);
-
-            return $response;
-        }
-        return false;
-
+        return $response->body();
     }
 
-    public function simulatec2b($amount, $msisdn, $ref)
+    public function express($amount, $phone, $reference, $remark = null)
     {
-        $data = array(
-            'ShortCode' => $this->paybill,
-            'CommandID' => 'CustomerPayBillOnline',
-            'Amount' => $amount,
-            'Msisdn' => $msisdn,
-            'BillRefNumber' => $ref,
-        );
-        $data = json_encode($data);
-        $url = $this->base_url . 'c2b/v1/simulate';
-        $response = $this->generalCurlRequest($url, $data);
-
-        return $response;
-    }
-
-    public function express($amount, $phone, $ac_ref, $remark = null)
-    {
-
-        $final_phone = '254' . substr($phone, -9);
         $timestamp = date('YmdHis');
 
         $password = base64_encode($this->paybill . $this->passkey . $timestamp);
-        $url = config('evance-mpesa.mpesa_env') ? '' . $this->base_url . 'stkpush/v1/processrequest' : '' . $this->base_url . 'stkpush/v1/processrequest';
+        $url = config('evance-mpesa.mpesa_env') ? $this->base_url . 'mpesa/stkpush/v1/processrequest' : $this->base_url . 'mpesa/stkpush/v1/processrequest';
 
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $url);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type: application/json; charset=UTF-8', 'Authorization:Bearer ' . $this->access_token));
+        $response = Http::withHeaders([
+            'Content-Type: application/json; charset=UTF-8',
+            'Authorization:Bearer ' . $this->access_token
+        ])
+            ->post($url, [
+                'BusinessShortCode' => intval($this->paybill),
+                'Timestamp' => $timestamp,
+                'Password' => $password,
+                'TransactionType' => 'CustomerPayBillOnline',
+                'Amount' => $amount,
+                'PartyA' => '254' . substr($phone, -9),
+                'PartyB' => $this->paybill,
+                'PhoneNumber' => '254' . substr($phone, -9),
+                'CallBackURL' => $this->callbackurl,
+                'AccountReference' => $reference,
+                'TransactionDesc' => $remark,
+                'Remark' => $remark,
+            ]);
 
-        $curl_post_data = array(
-            'BusinessShortCode' => intval($this->paybill),
-            'Timestamp' => $timestamp,
-            'Password' => $password,
-            'TransactionType' => 'CustomerPayBillOnline',
-            'Amount' => $amount,
-            'PartyA' => $final_phone,
-            'PartyB' => $this->paybill,
-            'PhoneNumber' => $final_phone,
-            'CallBackURL' => $this->callbackurl,
-            'AccountReference' => $ac_ref,
-            'TransactionDesc' => $remark,
-            'Remark' => $remark,
-        );
-
-        $data_string = json_encode($curl_post_data);
-
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_POST, true);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, $data_string);
-
-        $response = curl_exec($curl);
-
-        return $response;
+        return $response->body();
     }
 
-    public function accessToken()
-    {
-        $token = Cache::get('access_token');
-        $tokenTimestamp = Cache::get('token_timestamp');
 
-        // Check if the token is expired or not present in the cache
-        if ($token === null || $this->isTokenExpired($tokenTimestamp)) {
-            // Refresh the token
-            $token = $this->refreshToken();
-        }
+    public function simulateB2C(
+        string $initiator_name,
+        string $security_credential,
+        $command_id = 'BusinessPayment',
+        int $amount,
+        int $party_a,
+        $party_b,
+        $remarks = null,
+        $occassion = null
+    ) {
 
-        return $token;
+        $response = Http::withHeaders([
+            'Authorization:Bearer ' . $this->access_token,
+            'Content-Type: application/json; charset=UTF-8',
+
+        ])
+            ->post($this->base_url . 'mpesa/b2c/v3/paymentrequest', [
+                "OriginatorConversationID" => Str::uuid(),
+                "InitiatorName" => $initiator_name,
+                "SecurityCredential" => $security_credential,
+                "CommandID" => $command_id,
+                "Amount" => $amount,
+                "PartyA" => $party_a,
+                "PartyB" => "254" . substr($party_b, -9),
+                "Remarks" => $remarks,
+                "QueueTimeOutURL" => $this->queue_timeout_url,
+                "ResultURL" => $this->callback_results,
+                "Occassion" => $occassion
+            ]);
+
+        return $response->body();
     }
 
-    private function isTokenExpired($tokenTimestamp)
-    {
-        $expirationTime = 3600; // Token expiration time in seconds (1 hour)
 
-        return (time() - $tokenTimestamp) >= $expirationTime;
+    public function transactionStatus(
+        string $initiator_name,
+        string $security_credential,
+        int $party_a,
+        string $transaction_id,
+        string $originator_conversation_id = null
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Basic ',
+        ])
+            ->post(
+                $this->base_url . 'mpesa/transactionstatus/v1/query',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "Command ID" => "TransactionStatusQuery",
+                    "Transaction ID" => str($transaction_id)->upper(),
+                    "OriginatorConversationID" => $originator_conversation_id,
+                    "PartyA" => $party_a,
+                    "IdentifierType" => "4",
+                    "ResultURL" => $this->callback_results,
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "Remarks" => "OK",
+                    "Occasion" => "OK"
+                ]
+            );
+
+        return $response->body();
     }
 
-    private function refreshToken()
-    {
-        // Perform token refresh logic
-        $newToken = $this->generateSandboxToken();
-        $newTokenTimestamp = time();
 
-        // Store the new token and its timestamp in the cache
-        $expirationTimeInSeconds = 3600; // Cache expiration time in seconds (1 hour)
-        Cache::put('access_token', $newToken, $expirationTimeInSeconds);
-        Cache::put('token_timestamp', $newTokenTimestamp, $expirationTimeInSeconds);
+    public function dynamicQR(
+        string $merchant_name,
+        string $reference,
+        int $amount,
+        string $trx_code = 'BG',
+        int $cpi_number = null,
+        string $size = "300"
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/qrcode/v1/generate',
+                [
+                    "MerchantName" => $merchant_name,
+                    "RefNo" => $reference,
+                    "Amount" => $amount,
+                    "TrxCode" => $trx_code,
+                    "CPI" => $cpi_number ?? $this->shortcode,
+                    "Size" => $size
+                ]
+            );
 
-        return $newToken;
+        return $response->body();
     }
 
-    public function validationResults()
-    {
-        return $this->callback_results->validateCallBack();
+
+    public function accountBalance(
+        string $initiator_name,
+        string $security_credential,
+        int $party_a,
+    ) {
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/accountbalance/v1/query',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "Command ID" => "AccountBalance",
+                    "PartyA" => $party_a,
+                    "IdentifierType" => "4",
+                    "Remarks" => "ok",
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "ResultURL" => $this->callback_results
+                ]
+            );
+
+        return $response->body();
     }
 
-    public function confirmationResults()
-    {
-        return $this->callback_results->confrimCallBack();
+
+    public function reversal(
+        string $initiator_name,
+        string $security_credential,
+        string $transaction_id,
+        int $receiver_party,
+    ) {
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/reversal/v1/request',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "CommandID" => "TransactionReversal",
+                    "TransactionID" => $transaction_id,
+                    "ReceiverParty" => $receiver_party,
+                    "RecieverIdentifierType" => "11",
+                    "ResultURL" => $this->callback_results,
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "Remarks" => "Ok",
+                    "Occasion" => "Ok"
+                ]
+            );
+
+        return $response->body();
     }
 
-    public function callBackResults()
-    {
-        return $this->callback_results->CallBack();
+
+    public function taxRemittance(
+        string $initiator_name,
+        string $security_credential,
+        int $amount,
+        int $party_a
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/b2b/v1/remittax',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "Command ID" => "PayTaxToKRA",
+                    "SenderIdentifierType" => "4",
+                    "RecieverIdentifierType" => "4",
+                    "Amount" => $amount,
+                    "PartyA" => $party_a,
+                    "PartyB" => "572572",
+                    "AccountReference" => "353353",
+                    "Remarks" => "OK",
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "ResultURL" => $this->callback_results
+                ]
+            );
+
+        return $response->body();
     }
 
-    public function test()
-    {
-        return $this->callbackurl;
+    public function businessPayBill(
+        string $initiator_name,
+        string $security_credential,
+        int $reference,
+        int $amount,
+        int $party_a,
+        $party_b,
+        $remarks = "OK"
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/b2b/v1/paymentrequest',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "Command ID" => "BusinessPayBill",
+                    "SenderIdentifierType" => "4",
+                    "RecieverIdentifierType" => "4",
+                    "Amount" => $amount,
+                    "PartyA" => $party_a,
+                    "PartyB" => $party_b,
+                    "AccountReference" => substr($reference, 13),
+                    "Requester" => null,
+                    "Remarks" => $remarks,
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "ResultURL" => $this->callback_results
+                ]
+            );
+
+        return $response->body();
+    }
+
+
+    public function buyGoods(
+        string $initiator_name,
+        string $security_credential,
+        int $reference,
+        int $amount,
+        int $party_a,
+        $party_b,
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/b2b/v1/paymentrequest',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "Command ID" => "BusinessBuyGoods",
+                    "SenderIdentifierType" => "4",
+                    "RecieverIdentifierType" => "4",
+                    "Amount" => $amount,
+                    "PartyA" => $party_a,
+                    "PartyB" => $party_b,
+                    "AccountReference" => substr($reference, 13),
+                    "Requester" => null,
+                    "Remarks" => "OK",
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "ResultURL" => $this->callback_results
+                ]
+            );
+
+        return $response->body();
+    }
+
+
+    public function b2bExpressCheckout(
+        string $primary_short_code,
+        string $receiver_short_code,
+        int $amount,
+        string $reference,
+        string $patner_name
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'v1/ussdpush/get-msisdn',
+                [
+                    "primaryShortCode" => $primary_short_code,
+                    "receiverShortCode" => $receiver_short_code,
+                    "amount" => $amount,
+                    "paymentRef" => $reference,
+                    "callbackUrl" => $this->callback_results,
+                    "partnerName" => $patner_name,
+                    "RequestRefID" => Str::uuid()
+                ]
+            );
+
+        return $response->body();
+    }
+
+
+    public function b2cAccountTopUp(
+        string $initiator_name,
+        string $security_credential,
+        int $reference,
+        int $amount,
+        int $party_a,
+        $party_b,
+    ) {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->access_token,
+        ])
+            ->post(
+                $this->base_url . 'mpesa/b2b/v1/paymentrequest',
+                [
+                    "Initiator" => $initiator_name,
+                    "SecurityCredential" => $security_credential,
+                    "CommandID" => "BusinessPayToBulk",
+                    "SenderIdentifierType" => "4",
+                    "RecieverIdentifierType" => "4",
+                    "Amount" => $amount,
+                    "PartyA" => $party_a,
+                    "PartyB" => $party_b,
+                    "AccountReference" => substr($reference, 13),
+                    "Requester" => null,
+                    "Remarks" => "OK",
+                    "QueueTimeOutURL" => $this->queue_timeout_url,
+                    "ResultURL" => $this->callback_results
+                ]
+            );
+
+        return $response->body();
     }
 }

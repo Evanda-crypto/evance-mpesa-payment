@@ -21,7 +21,7 @@ class MpesaPaymentServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__.'/../config/evance-mpesa.php' => config_path('evance-mpesa.php'),
+                __DIR__ . '/../config/evance-mpesa.php' => config_path('evance-mpesa.php'),
             ], 'config');
 
             // Publishing the views.
@@ -50,7 +50,7 @@ class MpesaPaymentServiceProvider extends ServiceProvider
     public function register()
     {
         // Automatically apply the package configuration
-        $this->mergeConfigFrom(__DIR__.'/../config/evance-mpesa.php', 'mpesa-payment');
+        $this->mergeConfigFrom(__DIR__ . '/../config/evance-mpesa.php', 'mpesa-payment');
 
         // Register the main class to use with the facade
         $this->app->singleton('mpesa-payment', function () {
@@ -58,9 +58,9 @@ class MpesaPaymentServiceProvider extends ServiceProvider
         });
 
         $this->publishes([
-            __DIR__.'/../config/evance-mpesa.php' => config_path('evance-mpesa.php'),
+            __DIR__ . '/../config/evance-mpesa.php' => config_path('evance-mpesa.php'),
         ], 'config');
-        
-        $this->loadRoutesFrom(__DIR__.'/routes/api.php');
+
+        $this->loadRoutesFrom(__DIR__ . '/routes/api.php');
     }
 }

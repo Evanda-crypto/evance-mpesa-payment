@@ -4,13 +4,12 @@ namespace EvanceOdhiambo\MpesaPayment;
 
 use Illuminate\Support\Facades\Cache;
 use EvanceOdhiambo\MpesaPayment\Controllers\MpesaResponseController;
-use Exception;
 use Illuminate\Support\Facades\Http;
+use Exception;
 use Illuminate\Support\Str;
 
 class MpesaPayment
 {
-
     public $base_url;
 
     public $consumer_key;

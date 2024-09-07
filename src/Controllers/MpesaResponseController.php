@@ -24,11 +24,11 @@ class MpesaResponseController extends Controller
 
     public function b2cCallback(Request $request)
     {
-        # code...
+        return $request;
     }
     public function queueTimeoutCallback(Request $request)
     {
-        # code...
+        return $request;
     }
 
 }

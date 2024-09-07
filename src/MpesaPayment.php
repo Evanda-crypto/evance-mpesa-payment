@@ -77,7 +77,7 @@ class MpesaPayment
 
         $cacheKey = 'evance_mpesa_access_token';
 
-        $cachedToken = cache()->get($cacheKey);
+        $cachedToken = Cache::get($cacheKey);
 
         if ($cachedToken) {
             return $cachedToken;
@@ -95,7 +95,7 @@ class MpesaPayment
             $accessToken = $results->access_token;
             $expiresIn = (int) $results->expires_in;
 
-            cache()->put($cacheKey, $accessToken, $expiresIn);
+            Cache::put($cacheKey, $accessToken, $expiresIn);
             return $accessToken;
         }
 

@@ -4,10 +4,6 @@ namespace EvanceOdhiambo\MpesaPayment\Controllers;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-<<<<<<< HEAD
-=======
-
->>>>>>> dev
 class MpesaResponseController extends Controller
 {
     public function c2bConfrimCallBack(Request $request)
